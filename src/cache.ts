@@ -1,8 +1,8 @@
 import {proxy, subscribe} from 'valtio';
-import deepMerge from '@fastify/deepmerge';
 
 import {ISyncDB, injectDb} from './sync-db';
 import {plainDeepClone} from './plain-deep-clone';
+import { deepMerge } from './merge';
 
 /**
  * Default prefix used for local storage keys to avoid collisions.
@@ -37,8 +37,6 @@ export interface CacheOptions {
    */
   db?: ISyncDB;
 }
-
-const merge = deepMerge()
 
 /**
  * Creates a cached valtio proxy that automatically persists state to local storage.
@@ -92,7 +90,7 @@ export const cache = <T extends object>(
   // Update initial object state fields with local storage copy
   // It is important to update, instead of clone initial object,
   // because it can contain logic in methods and getters that need to be preserved
-  merge(initialObject, db.get(fullKey) || {});
+  deepMerge(initialObject, db.get(fullKey) || {});
   const state = proxy(initialObject) as T;
 
   subscribe(state, () => {

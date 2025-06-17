@@ -23,8 +23,10 @@ export interface ISyncDB {
  */
 export class LocalStorageDB implements ISyncDB {
 
+  constructor(private storage: Storage = localStorage) {}
+
   get<T = string>(key: string): T | null {
-    const value = localStorage.getItem(key);
+    const value = this.storage.getItem(key);
     if (!value) {
       return value as null;
     }
@@ -36,7 +38,7 @@ export class LocalStorageDB implements ISyncDB {
     const serialized: string =
       typeof value !== 'string' ? JSON.stringify(value) : value;
 
-    localStorage.setItem(key, serialized);
+      this.storage.setItem(key, serialized);
   }
 }
 
