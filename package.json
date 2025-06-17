@@ -1,0 +1,30 @@
+{
+  "name": "valtio-cache",
+  "version": "0.1.0",
+  "description": "Production-ready tiny library for synchronous caching and persistence of Valtio state manager",
+  "main": "index.js",
+  "scripts": {
+    "test": "jest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LeoVS09/valtio-cache.git"
+  },
+  "keywords": [
+    "state",
+    "managment",
+    "persistance",
+    "caching",
+    "proxy"
+  ],
+  "author": "LeoVS09",
+  "license": "GPL-3.0",
+  "bugs": {
+    "url": "https://github.com/LeoVS09/valtio-cache/issues"
+  },
+  "homepage": "https://github.com/LeoVS09/valtio-cache#readme",
+  "dependencies": {
+    "@fastify/deepmerge": "^3.1.0",
+    "valtio": "^2.1.5"
+  }
+}
