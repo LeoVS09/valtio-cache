@@ -12,7 +12,15 @@ export function plainDeepClone<T extends object>(target: T): T {
   const result: any = {};
   for (const key of keys) {
     const value = (target as any)[key];
-    if (Array.isArray(value) || typeof value !== 'object') {
+    if (Array.isArray(value)) {
+      // Clone arrays by creating new array and recursively cloning elements
+      result[key] = value.map(item => 
+        item && typeof item === 'object' ? plainDeepClone(item) : item
+      );
+      continue;
+    }
+    
+    if (typeof value !== 'object' || value === null) {
       result[key] = value;
       continue;
     }
@@ -29,6 +37,12 @@ export function plainDeepClone<T extends object>(target: T): T {
  * in other terms not a method, getter or setter
  */
 export const isPlainField = (target: object, key: string): boolean => {
+  // First check if the value itself is a function (for inherited methods)
+  const value = (target as any)[key];
+  if (typeof value === 'function') {
+    return false;
+  }
+
   const desc = Object.getOwnPropertyDescriptor(target, key);
   if (!desc) {
     // if it not exists, then probably it is plain

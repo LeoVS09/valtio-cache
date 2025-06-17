@@ -12,7 +12,9 @@
   "scripts": {
     "dev": "microbundle watch",
     "build": "microbundle",
-    "test": "vitest"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "coverage": "vitest run --coverage"
   },
   "repository": {
     "type": "git",
