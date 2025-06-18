@@ -12,6 +12,8 @@
   "scripts": {
     "dev": "microbundle watch",
     "build": "microbundle",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run clean && npm run build",
     "test": "vitest run",
     "test:watch": "vitest",
     "coverage": "vitest run --coverage"
