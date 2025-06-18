@@ -49,10 +49,10 @@ console.log(state.hello); // "Hello Valtio"
 - 🔄 Persist and restore Valtio state automatically
 - 🎯 Full getters and setters support
 - 🚀 TypeScript support with full type safety
-- ⚡ Fully synchronous
 - 🛠️ Configurable storage backends
 - 🧪 Test-friendly with skip cache option
 - 📦 Tiny bundle size
+- ⚡ Fully synchronous
 
 Special note on the last point:
 
