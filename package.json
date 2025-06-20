@@ -1,6 +1,6 @@
 {
   "name": "valtio-cache",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Production-ready tiny library for synchronous caching and persistence of Valtio state manager",
   "source": "src/index.ts",
   "main": "dist/index.js",
