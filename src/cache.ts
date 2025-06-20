@@ -8,7 +8,7 @@ import { deepMerge } from './merge';
  * Default prefix used for local storage keys to avoid collisions.
  * Uses library version and name as prefix.
  */
-const DEFAULT_PREFIX = 'valtio/v0.1/'
+const DEFAULT_PREFIX = 'valtio/v1.0/'
 
 /**
  * Configuration options for the cache function.
