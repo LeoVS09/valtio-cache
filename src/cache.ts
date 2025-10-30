@@ -44,6 +44,13 @@ export interface CacheOptions {
    * @default valtio.proxy
    * */
   proxyFunction?: typeof proxy
+
+  /**
+   * Fix for "TypeError: proxyState is not iterable" error 
+   * allow to override subscribe function directly from 'valtio' package
+   * @default valtio.subscribe
+   * */
+  subscribeFunction?: typeof subscribe
 }
 
 /**
@@ -88,7 +95,8 @@ export const cache = <T extends object>(
     prefix = DEFAULT_PREFIX, 
     skipCache = false,
     db = injectDb(),
-    proxyFunction = proxy
+    proxyFunction = proxy,
+    subscribeFunction = subscribe
   } = typeof keyOrOptions === 'string' ? {key: keyOrOptions} : keyOrOptions;
 
   if (skipCache) {
@@ -102,7 +110,7 @@ export const cache = <T extends object>(
   deepMerge(initialObject, db.get(fullKey) || {});
   const state = proxyFunction(initialObject) as T;
 
-  subscribe(state, () => {
+  subscribeFunction(state, () => {
     // Deep clone object without methods, getters and setters
     const cloned = plainDeepClone(state);
     db.set(fullKey, cloned);

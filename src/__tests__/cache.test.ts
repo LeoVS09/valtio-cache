@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
-import { proxy } from 'valtio';
+import { proxy, subscribe } from 'valtio';
 import { cache, type CacheOptions } from '../cache';
 import type { ISyncDB } from '../sync-db';
 
@@ -494,6 +494,168 @@ describe('cache', () => {
 
       expect(result.data).toBe('test');
       expect(mockGet).toHaveBeenCalledWith('valtio/v1.0/direct-proxy-test');
+    });
+  });
+
+  describe('subscribeFunction option', () => {
+    it('should use custom subscribe function when provided', async () => {
+      const mockSubscribeFunction = vi.fn((state: any, callback: () => void) => {
+        // Call the original subscribe function
+        return subscribe(state, callback);
+      });
+
+      const initialState = { count: 0 };
+      const options: CacheOptions = {
+        key: 'subscribe-fn-test',
+        db: mockDb,
+        subscribeFunction: mockSubscribeFunction as any
+      };
+
+      const result = cache(options, initialState);
+
+      expect(mockSubscribeFunction).toHaveBeenCalledTimes(1);
+      expect(mockSubscribeFunction).toHaveBeenCalledWith(result, expect.any(Function));
+
+      // Trigger state change to verify subscribe is working
+      result.count = 5;
+
+      // Wait for subscription to trigger
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      expect(mockSet).toHaveBeenCalledWith('valtio/v1.0/subscribe-fn-test', { count: 5 });
+    });
+
+    it('should use custom subscribe function with skipCache enabled', () => {
+      const mockSubscribeFunction = vi.fn((state: any, callback: () => void) => {
+        return subscribe(state, callback);
+      });
+
+      const initialState = { count: 5 };
+      const options: CacheOptions = {
+        key: 'subscribe-skip-test',
+        db: mockDb,
+        skipCache: true,
+        subscribeFunction: mockSubscribeFunction as any
+      };
+
+      const result = cache(options, initialState);
+
+      // Subscribe should not be called when skipCache is true
+      expect(mockSubscribeFunction).not.toHaveBeenCalled();
+      expect(mockGet).not.toHaveBeenCalled();
+      expect(result.count).toBe(5);
+    });
+
+    it('should work with custom subscribe function and cached data', async () => {
+      const cachedData = { count: 10 };
+      mockGet.mockReturnValue(cachedData);
+
+      const mockSubscribeFunction = vi.fn((state: any, callback: () => void) => {
+        return subscribe(state, callback);
+      });
+
+      const initialState = { count: 0 };
+      const options: CacheOptions = {
+        key: 'subscribe-cached-test',
+        db: mockDb,
+        subscribeFunction: mockSubscribeFunction as any
+      };
+
+      const result = cache(options, initialState);
+
+      expect(mockSubscribeFunction).toHaveBeenCalled();
+      expect(mockGet).toHaveBeenCalledWith('valtio/v1.0/subscribe-cached-test');
+      expect(result.count).toBe(10);
+
+      // Verify subscribe callback works
+      result.count = 20;
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      expect(mockSet).toHaveBeenCalledWith('valtio/v1.0/subscribe-cached-test', { count: 20 });
+    });
+
+    it('should use both custom proxy and subscribe functions together', async () => {
+      const mockProxyFunction = vi.fn((obj: any) => {
+        return proxy(obj);
+      });
+
+      const mockSubscribeFunction = vi.fn((state: any, callback: () => void) => {
+        return subscribe(state, callback);
+      });
+
+      const initialState = { value: 'test' };
+      const options: CacheOptions = {
+        key: 'both-custom-test',
+        db: mockDb,
+        proxyFunction: mockProxyFunction as any,
+        subscribeFunction: mockSubscribeFunction as any
+      };
+
+      const result = cache(options, initialState);
+
+      expect(mockProxyFunction).toHaveBeenCalledWith(initialState);
+      expect(mockSubscribeFunction).toHaveBeenCalledWith(result, expect.any(Function));
+
+      result.value = 'updated';
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      expect(mockSet).toHaveBeenCalledWith('valtio/v1.0/both-custom-test', { value: 'updated' });
+    });
+
+    it('should use custom subscribe function with all options combined', async () => {
+      const customDb: ISyncDB = {
+        get: vi.fn().mockReturnValue({ value: 'cached' }),
+        set: vi.fn(),
+      };
+
+      const mockSubscribeFunction = vi.fn((state: any, callback: () => void) => {
+        return subscribe(state, callback);
+      });
+
+      const options: CacheOptions = {
+        key: 'complex-subscribe-test',
+        prefix: 'custom/v2/',
+        db: customDb,
+        subscribeFunction: mockSubscribeFunction as any
+      };
+
+      const initialState = { value: 'initial' };
+      const result = cache(options, initialState);
+
+      expect(mockSubscribeFunction).toHaveBeenCalled();
+      expect(customDb.get).toHaveBeenCalledWith('custom/v2/complex-subscribe-test');
+      expect(result.value).toBe('cached');
+
+      result.value = 'modified';
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      expect(customDb.set).toHaveBeenCalledWith('custom/v2/complex-subscribe-test', { value: 'modified' });
+    });
+
+    it('should properly trigger db.set through custom subscribe function', async () => {
+      let subscribeCallback: (() => void) | null = null;
+
+      const mockSubscribeFunction = vi.fn((state: any, callback: () => void) => {
+        subscribeCallback = callback;
+        return subscribe(state, callback);
+      });
+
+      const initialState = { counter: 0 };
+      const options: CacheOptions = {
+        key: 'trigger-test',
+        db: mockDb,
+        subscribeFunction: mockSubscribeFunction as any
+      };
+
+      const result = cache(options, initialState);
+
+      expect(subscribeCallback).not.toBeNull();
+      expect(mockSubscribeFunction).toHaveBeenCalledWith(result, expect.any(Function));
+
+      result.counter = 99;
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      expect(mockSet).toHaveBeenCalledWith('valtio/v1.0/trigger-test', { counter: 99 });
     });
   });
 }); 
