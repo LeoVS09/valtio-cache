@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
+import { proxy } from 'valtio';
 import { cache, type CacheOptions } from '../cache';
 import type { ISyncDB } from '../sync-db';
 
@@ -25,14 +26,14 @@ describe('cache', () => {
       const result = cache({ key: 'test-key', db: mockDb }, initialState);
 
       expect(result.count).toBe(0);
-      expect(mockGet).toHaveBeenCalledWith('valtio/v0.1/test-key');
+      expect(mockGet).toHaveBeenCalledWith('valtio/v1.0/test-key');
     });
 
     it('should use default prefix', () => {
       const initialState = { count: 0 };
       cache({ key: 'test-key', db: mockDb }, initialState);
 
-      expect(mockGet).toHaveBeenCalledWith('valtio/v0.1/test-key');
+      expect(mockGet).toHaveBeenCalledWith('valtio/v1.0/test-key');
     });
 
     it('should retrieve cached data on creation', () => {
@@ -41,7 +42,7 @@ describe('cache', () => {
       
       const result = cache({ key: 'test-key', db: mockDb }, initialState);
 
-      expect(mockGet).toHaveBeenCalledWith('valtio/v0.1/test-key');
+      expect(mockGet).toHaveBeenCalledWith('valtio/v1.0/test-key');
       expect(result.count).toBe(5);
     });
   });
@@ -74,7 +75,7 @@ describe('cache', () => {
       
       cache(options, initialState);
 
-      expect(customDb.get).toHaveBeenCalledWith('valtio/v0.1/test-key');
+      expect(customDb.get).toHaveBeenCalledWith('valtio/v1.0/test-key');
     });
 
     it('should skip caching when skipCache is true', () => {
@@ -179,7 +180,7 @@ describe('cache', () => {
       const initialState = { data: 'test' };
       const result = cache({ key: '', db: mockDb }, initialState);
 
-      expect(mockGet).toHaveBeenCalledWith('valtio/v0.1/');
+      expect(mockGet).toHaveBeenCalledWith('valtio/v1.0/');
       expect(result.data).toBe('test');
     });
 
@@ -189,7 +190,7 @@ describe('cache', () => {
       
       cache({ key: specialKey, db: mockDb }, initialState);
 
-      expect(mockGet).toHaveBeenCalledWith(`valtio/v0.1/${specialKey}`);
+      expect(mockGet).toHaveBeenCalledWith(`valtio/v1.0/${specialKey}`);
     });
 
     it('should handle arrays as initial state', () => {
@@ -356,13 +357,143 @@ describe('cache', () => {
   describe('string key parameter (legacy)', () => {
     it('should work with string key and mock db passed via options', () => {
       const initialState = { count: 0 };
-      
+
       // Since we can't pass db with string key, we'll test the default behavior
       // by ensuring our mock isn't called (since it uses injectDb())
       const result = cache('string-key-test', initialState);
-      
+
       expect(result.count).toBe(0);
       expect(mockGet).not.toHaveBeenCalled(); // Our mock db wasn't used
+    });
+  });
+
+  describe('proxyFunction option', () => {
+    it('should use custom proxy function when provided', () => {
+      const mockProxyFunction = vi.fn((obj: any) => {
+        return proxy(obj);
+      });
+
+      const initialState = { count: 0 };
+      const options: CacheOptions = {
+        key: 'proxy-test',
+        db: mockDb,
+        proxyFunction: mockProxyFunction as any
+      };
+
+      const result = cache(options, initialState);
+
+      expect(mockProxyFunction).toHaveBeenCalledWith(initialState);
+      expect(mockProxyFunction).toHaveBeenCalledTimes(1);
+      expect(result.count).toBe(0);
+    });
+
+    it('should use custom proxy function with skipCache enabled', () => {
+      const mockProxyFunction = vi.fn((obj: any) => {
+        return proxy(obj);
+      });
+
+      const initialState = { count: 5 };
+      const options: CacheOptions = {
+        key: 'proxy-skip-test',
+        db: mockDb,
+        skipCache: true,
+        proxyFunction: mockProxyFunction as any
+      };
+
+      const result = cache(options, initialState);
+
+      expect(mockProxyFunction).toHaveBeenCalledWith(initialState);
+      expect(mockGet).not.toHaveBeenCalled();
+      expect(result.count).toBe(5);
+    });
+
+    it('should work with custom proxy function and cached data', () => {
+      const cachedData = { count: 10 };
+      mockGet.mockReturnValue(cachedData);
+
+      const mockProxyFunction = vi.fn((obj: any) => {
+        return proxy(obj);
+      });
+
+      const initialState = { count: 0 };
+      const options: CacheOptions = {
+        key: 'proxy-cached-test',
+        db: mockDb,
+        proxyFunction: mockProxyFunction as any
+      };
+
+      const result = cache(options, initialState);
+
+      expect(mockProxyFunction).toHaveBeenCalled();
+      expect(mockGet).toHaveBeenCalledWith('valtio/v1.0/proxy-cached-test');
+      // The initial state should have been merged with cached data
+      expect(result.count).toBe(10);
+    });
+
+    it('should use custom proxy function with all options combined', () => {
+      const customDb: ISyncDB = {
+        get: vi.fn().mockReturnValue({ value: 'cached' }),
+        set: vi.fn(),
+      };
+
+      const mockProxyFunction = vi.fn((obj: any) => {
+        return proxy(obj);
+      });
+
+      const options: CacheOptions = {
+        key: 'complex-proxy-test',
+        prefix: 'custom/v2/',
+        db: customDb,
+        proxyFunction: mockProxyFunction as any
+      };
+
+      const initialState = { value: 'initial' };
+      const result = cache(options, initialState);
+
+      expect(mockProxyFunction).toHaveBeenCalledWith(initialState);
+      expect(customDb.get).toHaveBeenCalledWith('custom/v2/complex-proxy-test');
+      expect(result.value).toBe('cached');
+    });
+
+    it('should properly integrate with valtio subscribe mechanism', async () => {
+      // Wrap valtio proxy to track calls
+      const mockProxyFunction = vi.fn((obj: any) => {
+        return proxy(obj);
+      });
+
+      const initialState = { count: 0 };
+      const options: CacheOptions = {
+        key: 'subscribe-test',
+        db: mockDb,
+        proxyFunction: mockProxyFunction as any
+      };
+
+      const result = cache(options, initialState);
+
+      // Change state to trigger subscription and db.set
+      result.count = 42;
+
+      // Wait for subscription to trigger
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      expect(mockProxyFunction).toHaveBeenCalled();
+      expect(mockSet).toHaveBeenCalled();
+      expect(mockSet).toHaveBeenCalledWith('valtio/v1.0/subscribe-test', { count: 42 });
+    });
+
+    it('should use the provided valtio proxy directly', () => {
+      // Test that we can pass valtio's proxy function directly
+      const initialState = { data: 'test' };
+      const options: CacheOptions = {
+        key: 'direct-proxy-test',
+        db: mockDb,
+        proxyFunction: proxy
+      };
+
+      const result = cache(options, initialState);
+
+      expect(result.data).toBe('test');
+      expect(mockGet).toHaveBeenCalledWith('valtio/v1.0/direct-proxy-test');
     });
   });
 }); 

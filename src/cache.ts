@@ -8,7 +8,7 @@ import { deepMerge } from './merge';
  * Default prefix used for local storage keys to avoid collisions.
  * Uses library version and name as prefix.
  */
-const DEFAULT_PREFIX = 'valtio/v1.0/'
+export const DEFAULT_PREFIX = 'valtio/v1.0/'
 
 /**
  * Configuration options for the cache function.
@@ -36,6 +36,14 @@ export interface CacheOptions {
    * If not provided, will use the default local storage database.
    */
   db?: ISyncDB;
+
+  /** 
+   * Fix for "TypeError: proxyState is not iterable" error 
+   * that can be caused by incorrect build process,
+   * allow to provide proxy function directly from 'valtio' package
+   * @default valtio.proxy
+   * */
+  proxyFunction?: typeof proxy
 }
 
 /**
@@ -79,11 +87,12 @@ export const cache = <T extends object>(
     key, 
     prefix = DEFAULT_PREFIX, 
     skipCache = false,
-    db = injectDb()
+    db = injectDb(),
+    proxyFunction = proxy
   } = typeof keyOrOptions === 'string' ? {key: keyOrOptions} : keyOrOptions;
 
   if (skipCache) {
-    return proxy(initialObject);
+    return proxyFunction(initialObject);
   }
 
   const fullKey = `${prefix}${key}`;
@@ -91,7 +100,7 @@ export const cache = <T extends object>(
   // It is important to update, instead of clone initial object,
   // because it can contain logic in methods and getters that need to be preserved
   deepMerge(initialObject, db.get(fullKey) || {});
-  const state = proxy(initialObject) as T;
+  const state = proxyFunction(initialObject) as T;
 
   subscribe(state, () => {
     // Deep clone object without methods, getters and setters
