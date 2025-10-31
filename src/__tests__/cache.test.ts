@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
 import { proxy, subscribe } from 'valtio';
-import { cache, type CacheOptions } from '../cache';
+import { cache, cacheFactory, type CacheOptions } from '../cache';
 import type { ISyncDB } from '../sync-db';
 
 describe('cache', () => {
@@ -656,6 +656,597 @@ describe('cache', () => {
       await new Promise(resolve => setTimeout(resolve, 10));
 
       expect(mockSet).toHaveBeenCalledWith('valtio/v1.0/trigger-test', { counter: 99 });
+    });
+  });
+});
+
+describe('cacheFactory', () => {
+  let mockDb: ISyncDB;
+  let mockGet: Mock;
+  let mockSet: Mock;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    
+    mockGet = vi.fn().mockReturnValue(null);
+    mockSet = vi.fn();
+    
+    mockDb = {
+      get: mockGet,
+      set: mockSet,
+    };
+  });
+
+  describe('basic functionality', () => {
+    it('should create a cache function with proxy function', () => {
+      const mockProxyFunction = vi.fn((obj: any) => proxy(obj));
+      
+      const myCache = cacheFactory({
+        proxyFunction: mockProxyFunction as any
+      });
+
+      const initialState = { count: 0 };
+      const result = myCache({ key: 'test-key', db: mockDb }, initialState);
+
+      expect(mockProxyFunction).toHaveBeenCalledWith(initialState);
+      expect(result.count).toBe(0);
+    });
+
+    it('should create a cache function with subscribe function', async () => {
+      const mockSubscribeFunction = vi.fn((state: any, callback: () => void) => {
+        return subscribe(state, callback);
+      });
+      
+      const myCache = cacheFactory({
+        subscribeFunction: mockSubscribeFunction as any
+      });
+
+      const initialState = { count: 0 };
+      const result = myCache({ key: 'test-key', db: mockDb }, initialState);
+
+      expect(mockSubscribeFunction).toHaveBeenCalledWith(result, expect.any(Function));
+      
+      result.count = 5;
+      await new Promise(resolve => setTimeout(resolve, 10));
+      
+      expect(mockSet).toHaveBeenCalledWith('valtio/v1.0/test-key', { count: 5 });
+    });
+
+    it('should create a cache function with both proxy and subscribe functions', async () => {
+      const mockProxyFunction = vi.fn((obj: any) => proxy(obj));
+      const mockSubscribeFunction = vi.fn((state: any, callback: () => void) => {
+        return subscribe(state, callback);
+      });
+      
+      const myCache = cacheFactory({
+        proxyFunction: mockProxyFunction as any,
+        subscribeFunction: mockSubscribeFunction as any
+      });
+
+      const initialState = { count: 0 };
+      const result = myCache({ key: 'test-key', db: mockDb }, initialState);
+
+      expect(mockProxyFunction).toHaveBeenCalledWith(initialState);
+      expect(mockSubscribeFunction).toHaveBeenCalledWith(result, expect.any(Function));
+      
+      result.count = 10;
+      await new Promise(resolve => setTimeout(resolve, 10));
+      
+      expect(mockSet).toHaveBeenCalledWith('valtio/v1.0/test-key', { count: 10 });
+    });
+  });
+
+  describe('string key parameter', () => {
+    it('should work with string key', () => {
+      const mockProxyFunction = vi.fn((obj: any) => proxy(obj));
+      
+      const myCache = cacheFactory({
+        proxyFunction: mockProxyFunction as any
+      });
+
+      const initialState = { count: 0 };
+      const result = myCache('test-key', initialState);
+
+      expect(mockProxyFunction).toHaveBeenCalledWith(initialState);
+      expect(result.count).toBe(0);
+    });
+
+    it('should convert string key to options object', () => {
+      const mockProxyFunction = vi.fn((obj: any) => proxy(obj));
+      
+      const myCache = cacheFactory({
+        proxyFunction: mockProxyFunction as any
+      });
+
+      const initialState = { value: 'test' };
+      myCache('my-string-key', initialState);
+
+      expect(mockProxyFunction).toHaveBeenCalled();
+    });
+  });
+
+  describe('options merging', () => {
+    it('should merge factory options with instance options', () => {
+      const mockProxyFunction = vi.fn((obj: any) => proxy(obj));
+      const mockSubscribeFunction = vi.fn((state: any, callback: () => void) => {
+        return subscribe(state, callback);
+      });
+      
+      const myCache = cacheFactory({
+        proxyFunction: mockProxyFunction as any,
+        subscribeFunction: mockSubscribeFunction as any
+      });
+
+      const initialState = { count: 0 };
+      const options: CacheOptions = {
+        key: 'merge-test',
+        prefix: 'custom/',
+        db: mockDb
+      };
+      
+      const result = myCache(options, initialState);
+
+      expect(mockProxyFunction).toHaveBeenCalledWith(initialState);
+      expect(mockSubscribeFunction).toHaveBeenCalledWith(result, expect.any(Function));
+      expect(mockGet).toHaveBeenCalledWith('custom/merge-test');
+    });
+
+    it('should allow instance options to override factory options', () => {
+      const factoryProxyFunction = vi.fn((obj: any) => proxy(obj));
+      const instanceProxyFunction = vi.fn((obj: any) => proxy(obj));
+      
+      const myCache = cacheFactory({
+        proxyFunction: factoryProxyFunction as any
+      });
+
+      const initialState = { count: 0 };
+      const options: CacheOptions = {
+        key: 'override-test',
+        db: mockDb,
+        proxyFunction: instanceProxyFunction as any
+      };
+      
+      const result = myCache(options, initialState);
+
+      // Instance option should override factory option
+      expect(instanceProxyFunction).toHaveBeenCalledWith(initialState);
+      expect(factoryProxyFunction).not.toHaveBeenCalled();
+      expect(result.count).toBe(0);
+    });
+
+    it('should preserve all cache options when using factory', () => {
+      const mockProxyFunction = vi.fn((obj: any) => proxy(obj));
+      
+      const myCache = cacheFactory({
+        proxyFunction: mockProxyFunction as any
+      });
+
+      const cachedData = { count: 10 };
+      mockGet.mockReturnValue(cachedData);
+
+      const initialState = { count: 0 };
+      const options: CacheOptions = {
+        key: 'preserve-test',
+        prefix: 'app/v1/',
+        db: mockDb,
+        skipCache: false
+      };
+      
+      const result = myCache(options, initialState);
+
+      expect(mockProxyFunction).toHaveBeenCalled();
+      expect(mockGet).toHaveBeenCalledWith('app/v1/preserve-test');
+      expect(result.count).toBe(10);
+    });
+  });
+
+  describe('skipCache behavior', () => {
+    it('should skip cache when skipCache is true', () => {
+      const mockProxyFunction = vi.fn((obj: any) => proxy(obj));
+      const mockSubscribeFunction = vi.fn((state: any, callback: () => void) => {
+        return subscribe(state, callback);
+      });
+      
+      const myCache = cacheFactory({
+        proxyFunction: mockProxyFunction as any,
+        subscribeFunction: mockSubscribeFunction as any
+      });
+
+      const initialState = { count: 0 };
+      const result = myCache({ key: 'skip-test', skipCache: true, db: mockDb }, initialState);
+
+      expect(mockProxyFunction).toHaveBeenCalledWith(initialState);
+      expect(mockSubscribeFunction).not.toHaveBeenCalled();
+      expect(mockGet).not.toHaveBeenCalled();
+      expect(result.count).toBe(0);
+    });
+
+    it('should use cache when skipCache is false', async () => {
+      const mockProxyFunction = vi.fn((obj: any) => proxy(obj));
+      const mockSubscribeFunction = vi.fn((state: any, callback: () => void) => {
+        return subscribe(state, callback);
+      });
+      
+      const myCache = cacheFactory({
+        proxyFunction: mockProxyFunction as any,
+        subscribeFunction: mockSubscribeFunction as any
+      });
+
+      const cachedData = { count: 5 };
+      mockGet.mockReturnValue(cachedData);
+
+      const initialState = { count: 0 };
+      const result = myCache({ key: 'use-cache-test', skipCache: false, db: mockDb }, initialState);
+
+      expect(mockProxyFunction).toHaveBeenCalledWith(initialState);
+      expect(mockSubscribeFunction).toHaveBeenCalledWith(result, expect.any(Function));
+      expect(mockGet).toHaveBeenCalledWith('valtio/v1.0/use-cache-test');
+      expect(result.count).toBe(5);
+    });
+  });
+
+  describe('cached data retrieval', () => {
+    it('should retrieve and merge cached data', () => {
+      const mockProxyFunction = vi.fn((obj: any) => proxy(obj));
+      
+      const myCache = cacheFactory({
+        proxyFunction: mockProxyFunction as any
+      });
+
+      const cachedData = { count: 20, theme: 'dark' };
+      mockGet.mockReturnValue(cachedData);
+
+      const initialState = { count: 0, name: 'test' };
+      const result = myCache({ key: 'cached-test', db: mockDb }, initialState);
+
+      expect(mockProxyFunction).toHaveBeenCalledWith(initialState);
+      expect(mockGet).toHaveBeenCalledWith('valtio/v1.0/cached-test');
+      expect(result.count).toBe(20);
+      expect(result.name).toBe('test');
+      expect((result as any).theme).toBe('dark');
+    });
+
+    it('should handle null cached data', () => {
+      const mockProxyFunction = vi.fn((obj: any) => proxy(obj));
+      
+      const myCache = cacheFactory({
+        proxyFunction: mockProxyFunction as any
+      });
+
+      mockGet.mockReturnValue(null);
+
+      const initialState = { count: 0 };
+      const result = myCache({ key: 'null-cache-test', db: mockDb }, initialState);
+
+      expect(result.count).toBe(0);
+    });
+
+    it('should handle empty cached data', () => {
+      const mockProxyFunction = vi.fn((obj: any) => proxy(obj));
+      
+      const myCache = cacheFactory({
+        proxyFunction: mockProxyFunction as any
+      });
+
+      mockGet.mockReturnValue({});
+
+      const initialState = { count: 0, name: 'test' };
+      const result = myCache({ key: 'empty-cache-test', db: mockDb }, initialState);
+
+      expect(result.count).toBe(0);
+      expect(result.name).toBe('test');
+    });
+  });
+
+  describe('state persistence', () => {
+    it('should persist state changes to database', async () => {
+      const mockSubscribeFunction = vi.fn((state: any, callback: () => void) => {
+        return subscribe(state, callback);
+      });
+      
+      const myCache = cacheFactory({
+        subscribeFunction: mockSubscribeFunction as any
+      });
+
+      const initialState = { count: 0 };
+      const result = myCache({ key: 'persist-test', db: mockDb }, initialState);
+
+      result.count = 42;
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      expect(mockSet).toHaveBeenCalledWith('valtio/v1.0/persist-test', { count: 42 });
+    });
+
+    it('should persist complex state changes', async () => {
+      const mockSubscribeFunction = vi.fn((state: any, callback: () => void) => {
+        return subscribe(state, callback);
+      });
+      
+      const myCache = cacheFactory({
+        subscribeFunction: mockSubscribeFunction as any
+      });
+
+      const initialState = {
+        user: { name: 'John', age: 30 },
+        settings: { theme: 'light' }
+      };
+      const result = myCache({ key: 'complex-persist-test', db: mockDb }, initialState);
+
+      result.user.age = 31;
+      result.settings.theme = 'dark';
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      expect(mockSet).toHaveBeenCalledWith('valtio/v1.0/complex-persist-test', {
+        user: { name: 'John', age: 31 },
+        settings: { theme: 'dark' }
+      });
+    });
+  });
+
+  describe('prefix handling', () => {
+    it('should use custom prefix from options', () => {
+      const mockProxyFunction = vi.fn((obj: any) => proxy(obj));
+      
+      const myCache = cacheFactory({
+        proxyFunction: mockProxyFunction as any
+      });
+
+      const initialState = { count: 0 };
+      myCache({ key: 'prefix-test', prefix: 'myapp/v2/', db: mockDb }, initialState);
+
+      expect(mockGet).toHaveBeenCalledWith('myapp/v2/prefix-test');
+    });
+
+    it('should use default prefix when not specified', () => {
+      const mockProxyFunction = vi.fn((obj: any) => proxy(obj));
+      
+      const myCache = cacheFactory({
+        proxyFunction: mockProxyFunction as any
+      });
+
+      const initialState = { count: 0 };
+      myCache({ key: 'default-prefix-test', db: mockDb }, initialState);
+
+      expect(mockGet).toHaveBeenCalledWith('valtio/v1.0/default-prefix-test');
+    });
+
+    it('should use empty prefix when explicitly set', () => {
+      const mockProxyFunction = vi.fn((obj: any) => proxy(obj));
+      
+      const myCache = cacheFactory({
+        proxyFunction: mockProxyFunction as any
+      });
+
+      const initialState = { count: 0 };
+      myCache({ key: 'no-prefix-test', prefix: '', db: mockDb }, initialState);
+
+      expect(mockGet).toHaveBeenCalledWith('no-prefix-test');
+    });
+  });
+
+  describe('real valtio functions', () => {
+    it('should work with real valtio proxy and subscribe functions', async () => {
+      const myCache = cacheFactory({
+        proxyFunction: proxy,
+        subscribeFunction: subscribe
+      });
+
+      const initialState = { count: 0 };
+      const result = myCache({ key: 'real-valtio-test', db: mockDb }, initialState);
+
+      expect(result.count).toBe(0);
+      
+      result.count = 100;
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      expect(mockSet).toHaveBeenCalledWith('valtio/v1.0/real-valtio-test', { count: 100 });
+    });
+
+    it('should work with real valtio and cached data', () => {
+      const myCache = cacheFactory({
+        proxyFunction: proxy,
+        subscribeFunction: subscribe
+      });
+
+      const cachedData = { count: 50 };
+      mockGet.mockReturnValue(cachedData);
+
+      const initialState = { count: 0 };
+      const result = myCache({ key: 'real-valtio-cached-test', db: mockDb }, initialState);
+
+      expect(result.count).toBe(50);
+      expect(mockGet).toHaveBeenCalledWith('valtio/v1.0/real-valtio-cached-test');
+    });
+  });
+
+  describe('multiple instances', () => {
+    it('should create independent cache instances', async () => {
+      const mockProxyFunction = vi.fn((obj: any) => proxy(obj));
+      const mockSubscribeFunction = vi.fn((state: any, callback: () => void) => {
+        return subscribe(state, callback);
+      });
+      
+      const myCache = cacheFactory({
+        proxyFunction: mockProxyFunction as any,
+        subscribeFunction: mockSubscribeFunction as any
+      });
+
+      const state1 = myCache({ key: 'instance-1', db: mockDb }, { count: 0 });
+      const state2 = myCache({ key: 'instance-2', db: mockDb }, { count: 10 });
+
+      expect(mockProxyFunction).toHaveBeenCalledTimes(2);
+      expect(mockSubscribeFunction).toHaveBeenCalledTimes(2);
+      expect(state1.count).toBe(0);
+      expect(state2.count).toBe(10);
+
+      state1.count = 5;
+      await new Promise(resolve => setTimeout(resolve, 10));
+      
+      expect(state1.count).toBe(5);
+      expect(state2.count).toBe(10);
+    });
+
+    it('should create independent cache instances with different keys', () => {
+      const myCache = cacheFactory({
+        proxyFunction: proxy,
+        subscribeFunction: subscribe
+      });
+
+      const userState = myCache({ key: 'user', db: mockDb }, { name: 'John' });
+      const appState = myCache({ key: 'app', db: mockDb }, { theme: 'light' });
+
+      expect(mockGet).toHaveBeenCalledWith('valtio/v1.0/user');
+      expect(mockGet).toHaveBeenCalledWith('valtio/v1.0/app');
+      expect((userState as any).name).toBe('John');
+      expect((appState as any).theme).toBe('light');
+    });
+  });
+
+  describe('edge cases', () => {
+    it('should handle factory with only proxyFunction', () => {
+      const mockProxyFunction = vi.fn((obj: any) => proxy(obj));
+      
+      const myCache = cacheFactory({
+        proxyFunction: mockProxyFunction as any
+      });
+
+      const initialState = { count: 0 };
+      const result = myCache({ key: 'only-proxy-test', db: mockDb }, initialState);
+
+      expect(mockProxyFunction).toHaveBeenCalledWith(initialState);
+      expect(result.count).toBe(0);
+    });
+
+    it('should handle factory with only subscribeFunction', async () => {
+      const mockSubscribeFunction = vi.fn((state: any, callback: () => void) => {
+        return subscribe(state, callback);
+      });
+      
+      const myCache = cacheFactory({
+        subscribeFunction: mockSubscribeFunction as any
+      });
+
+      const initialState = { count: 0 };
+      const result = myCache({ key: 'only-subscribe-test', db: mockDb }, initialState);
+
+      expect(mockSubscribeFunction).toHaveBeenCalledWith(result, expect.any(Function));
+      
+      result.count = 7;
+      await new Promise(resolve => setTimeout(resolve, 10));
+      
+      expect(mockSet).toHaveBeenCalledWith('valtio/v1.0/only-subscribe-test', { count: 7 });
+    });
+
+    it('should handle empty factory options', () => {
+      const myCache = cacheFactory({});
+
+      const initialState = { count: 0 };
+      const result = myCache({ key: 'empty-factory-test', db: mockDb }, initialState);
+
+      expect(result.count).toBe(0);
+    });
+
+    it('should work with arrays as initial state', () => {
+      const mockProxyFunction = vi.fn((obj: any) => proxy(obj));
+      
+      const myCache = cacheFactory({
+        proxyFunction: mockProxyFunction as any
+      });
+
+      const initialArray = [1, 2, 3];
+      const result = myCache({ key: 'array-test', db: mockDb }, initialArray);
+
+      expect(Array.isArray(result)).toBe(true);
+      expect(result.length).toBe(3);
+      expect(mockProxyFunction).toHaveBeenCalledWith(initialArray);
+    });
+
+    it('should preserve methods and getters from initial state', () => {
+      const myCache = cacheFactory({
+        proxyFunction: proxy,
+        subscribeFunction: subscribe
+      });
+
+      class TestClass {
+        count = 0;
+        
+        get doubled() {
+          return this.count * 2;
+        }
+        
+        increment() {
+          this.count++;
+        }
+      }
+      
+      const initialState = new TestClass();
+      const result = myCache({ key: 'with-methods-test', db: mockDb }, initialState);
+
+      expect(typeof (result as any).increment).toBe('function');
+      expect((result as any).doubled).toBe(0);
+      (result as any).increment();
+      expect((result as any).count).toBe(1);
+      expect((result as any).doubled).toBe(2);
+    });
+  });
+
+  describe('integration scenarios', () => {
+    it('should work in a typical app setup scenario', async () => {
+      // Simulate a typical setup where you create a cache factory once
+      const myCache = cacheFactory({
+        proxyFunction: proxy,
+        subscribeFunction: subscribe
+      });
+
+      // Create multiple state stores
+      const userPrefs = myCache({ key: 'user-prefs', db: mockDb }, {
+        theme: 'light',
+        language: 'en'
+      });
+
+      const appState = myCache({ key: 'app-state', db: mockDb }, {
+        isLoading: false,
+        data: null as any
+      });
+
+      expect(userPrefs.theme).toBe('light');
+      expect(appState.isLoading).toBe(false);
+
+      // Modify state
+      userPrefs.theme = 'dark';
+      appState.isLoading = true;
+
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      expect(mockSet).toHaveBeenCalledWith('valtio/v1.0/user-prefs', {
+        theme: 'dark',
+        language: 'en'
+      });
+      expect(mockSet).toHaveBeenCalledWith('valtio/v1.0/app-state', {
+        isLoading: true,
+        data: null
+      });
+    });
+
+    it('should handle multiple factories with different configurations', () => {
+      const factory1ProxyFunction = vi.fn((obj: any) => proxy(obj));
+      const factory2ProxyFunction = vi.fn((obj: any) => proxy(obj));
+
+      const cache1 = cacheFactory({
+        proxyFunction: factory1ProxyFunction as any
+      });
+
+      const cache2 = cacheFactory({
+        proxyFunction: factory2ProxyFunction as any
+      });
+
+      const state1 = cache1({ key: 'factory1-state', db: mockDb }, { value: 1 });
+      const state2 = cache2({ key: 'factory2-state', db: mockDb }, { value: 2 });
+
+      expect(factory1ProxyFunction).toHaveBeenCalledTimes(1);
+      expect(factory2ProxyFunction).toHaveBeenCalledTimes(1);
+      expect(state1.value).toBe(1);
+      expect(state2.value).toBe(2);
     });
   });
 }); 

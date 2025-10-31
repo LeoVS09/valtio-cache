@@ -118,3 +118,63 @@ export const cache = <T extends object>(
 
   return state;
 };
+
+/**
+ * Creates a cache function factory with pre-configured proxy and subscribe functions.
+ * 
+ * This factory is useful for fixing the "TypeError: proxyState is not iterable" error
+ * that can occur due to incorrect build processes. It allows you to create a cache 
+ * function with specific valtio proxy and subscribe functions that will be used 
+ * across all cache instances created by the returned function.
+ * 
+ * @param factoryOptions - Configuration options for the factory
+ * @param factoryOptions.proxyFunction - The valtio proxy function to use for all cache instances
+ * @param factoryOptions.subscribeFunction - The valtio subscribe function to use for all cache instances
+ * @returns A cache function that automatically uses the provided proxy and subscribe functions
+ * 
+ * @example
+ * ```typescript
+ * import { proxy, subscribe } from 'valtio';
+ * import { cacheFactory } from 'valtio-cache';
+ * 
+ * // Create a custom cache function with specific valtio functions
+ * const myCache = cacheFactory({
+ *   proxyFunction: proxy,
+ *   subscribeFunction: subscribe
+ * });
+ * 
+ * // Use it like the regular cache function
+ * const userState = myCache('user-preferences', {
+ *   theme: 'light',
+ *   language: 'en'
+ * });
+ * 
+ * // Or with options
+ * const appState = myCache({
+ *   key: 'app-state',
+ *   prefix: 'myapp/v1/',
+ *   skipCache: false
+ * }, {
+ *   isLoading: false,
+ *   data: null
+ * });
+ * ```
+ * 
+ * @example
+ * ```typescript
+ * // Fix build issues by explicitly providing valtio functions
+ * import * as valtio from 'valtio';
+ * 
+ * const cache = cacheFactory({
+ *   proxyFunction: valtio.proxy,
+ *   subscribeFunction: valtio.subscribe
+ * });
+ * 
+ * const state = cache('my-key', { count: 0 });
+ * ```
+ */
+export const cacheFactory = (factoryOptions: Pick<CacheOptions, 'proxyFunction' | 'subscribeFunction'>) => 
+  <T extends object>(keyOrOptions: string | CacheOptions, initialObject?: T): T => {
+    const options = typeof keyOrOptions === 'string' ? {key: keyOrOptions} : keyOrOptions;
+    return cache({...factoryOptions, ...options}, initialObject);
+  };
